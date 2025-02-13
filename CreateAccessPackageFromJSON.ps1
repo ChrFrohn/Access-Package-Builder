@@ -397,6 +397,18 @@ function Invoke-AccessPackages {
     Write-Host "Finished processing $PackageType access packages." -ForegroundColor Green
 }
 
+function Show-AccessPackages {
+    param (
+        [string]$PackageType,
+        [object]$Packages
+    )
+
+    foreach ($Package in $Packages.PSObject.Properties) {
+        Write-Host "$PackageType access package: $($Package.Name)" -ForegroundColor Cyan
+        Write-Host "Groups: $($Package.Value | Out-String)" -ForegroundColor Yellow
+    }
+}
+
 Write-Host "Displaying access packages to be created..." -ForegroundColor Magenta
 Show-AccessPackages -PackageType "Default" -Packages $JSON.defaultAccessPackage
 Show-AccessPackages -PackageType "Company" -Packages $JSON.companyAccessPackages
