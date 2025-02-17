@@ -47,11 +47,8 @@
     New-AccessPackageAutoAssignmentPolicy
         Adds an auto-assignment policy to an access package.
 
-    Add-EntraGroupToCatalog
-        Adds an Entra group to a specified catalog.
-
     Add-EntraGroupToAccessPackage
-        Adds an Entra group to a specified access package.
+        Adds an Entra group to a specified catalog and access package.
 
     Get-OrCreateCatalog
         Retrieves an existing catalog or creates a new one if it doesn't exist.
@@ -211,75 +208,6 @@ function New-AccessPackageAutoAssignmentPolicy {
 }
 
 # Function to add Entra Group to Catalog
-Function Add-EntraGroupToCatalog {
-    param (
-        [string]$CatalogId,
-        [string]$GroupName
-    )
-
-# Get the Group from Entra
-try {
-    $GetEntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'" 
-}
-catch {
-    Write-Host "Error finding group '$GroupName': $_" -ForegroundColor Red
-    return
-}
-
-if ($GetEntraGroup -eq $null) {
-    Write-Host "Group '$GroupName' not found." -ForegroundColor Red
-    return
-}
-
-$EntraGroup = $GetEntraGroup | Where-Object {
-    ($_.ProxyAddresses.Count -eq 0) -or
-    ($_.OnPremisesSyncEnabled -eq $false) -and
-    ($_.GroupTypes -notcontains "DynamicMembership")
-}
-
-if ($EntraGroup) {
-    Write-Host "Group found: $($EntraGroup.DisplayName)" -ForegroundColor Green
-    $GroupObjectId = $EntraGroup.Id
-
-    # Check if the group is already a resource in the catalog
-    $GroupResourceId = $null
-    $CatalogResources = Get-MgEntitlementManagementCatalogResource -AccessPackageCatalogId $CatalogId -All
-    foreach ($Resource in $CatalogResources) { 
-        if ($Resource.OriginId -eq $GroupObjectId) { 
-            $GroupResourceId = $Resource.Id
-            break 
-        } 
-    }
-    
-    if ($GroupResourceId -ne $null) { 
-        Write-Host "The group with ID '$GroupObjectId' is already a resource in the catalog." -ForegroundColor Yellow
-    } else {
-        # Add the Group as a resource to the Catalog
-        $GroupResourceAddParameters = @{
-            requestType = "adminAdd"
-            resource = @{
-                originId = $GroupObjectId
-                originSystem = "AadGroup"
-            }
-            catalog = @{
-                id = $CatalogId
-            }
-        }
-      
-        try {
-            New-MgEntitlementManagementResourceRequest -BodyParameter $GroupResourceAddParameters | out-null
-            Write-Host "Group with ID '$GroupObjectId' added to catalog successfully." -ForegroundColor Green
-        } catch {
-            Write-Host "Failed to add group with ID '$GroupObjectId' to catalog. Error: $_" -ForegroundColor Red
-        }
-    }
-} else {
-    Write-Host "Group '$GroupName' does not meet criteria." -ForegroundColor Yellow
-}
-
-}
-
-# Function to add a group to an access package
 Function Add-EntraGroupToAccessPackage {
     param (
         [string]$CatalogId,
@@ -289,53 +217,93 @@ Function Add-EntraGroupToAccessPackage {
 
     # Get the Group from Entra
     try {
-        $EntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'" | Where-Object {($_.ProxyAddresses.Count -eq 0) -or ($_.OnPremisesSyncEnabled -eq $false)}
-        if ($EntraGroup) {
-            Write-Host "Group found: $($EntraGroup.DisplayName)" -ForegroundColor Green
-            $GroupObjectId = $EntraGroup.Id
-        } else {
-            throw "Group '$GroupName' not found."
-        }
-    } catch {
-        Write-Host "Failed to retrieve group '$GroupName'. Error: $_" -ForegroundColor Red
+        $EntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'"
+    }
+    catch {
+        Write-Host "Error finding group '$GroupName': $_" -ForegroundColor Red
         return
     }
 
-    # Get the Group as a resource from the Catalog
-    $CatalogResources = Get-MgEntitlementManagementCatalogResource -AccessPackageCatalogId $CatalogId -ExpandProperty "scopes" -all
-    $GroupResource = $CatalogResources | Where-Object OriginId -eq $GroupObjectId 
-    $GroupResourceId = $GroupResource.id
-    $GroupResourceScope = $GroupResource.Scopes[0]
-
-    # Add the Group as a resource role to the Access Package
-    $GroupResourceFilter = "(originSystem eq 'AadGroup' and resource/id eq '" + $GroupResourceId + "')"
-    $GroupResourceRoles = Get-MgEntitlementManagementCatalogResourceRole -AccessPackageCatalogId $CatalogId -Filter $GroupResourceFilter -ExpandProperty "resource"
-    $GroupMemberRole = $GroupResourceRoles | Where-Object DisplayName -eq "Member"
-
-    $GroupResourceRoleScopeParameters = @{
-      role = @{
-          displayName =  "Member"
-          description =  ""
-          originSystem =  $GroupMemberRole.OriginSystem
-          originId =  $GroupMemberRole.OriginId
-          resource = @{
-              id = $GroupResource.Id
-              originId = $GroupResource.OriginId
-              originSystem = $GroupResource.OriginSystem
-          }
-      }
-      scope = @{
-          id = $GroupResourceScope.Id
-          originId = $GroupResourceScope.OriginId
-          originSystem = $GroupResourceScope.OriginSystem
-      }
+    if ($EntraGroup -eq $null) {
+        Write-Host "Group '$GroupName' not found." -ForegroundColor Red
+        return
     }
 
-    try {
-        New-MgEntitlementManagementAccessPackageResourceRoleScope -AccessPackageId $AccessPackageId -BodyParameter $GroupResourceRoleScopeParameters | out-null
-        Write-Host "Group '$GroupName' added to access package successfully." -ForegroundColor Green
-    } catch {
-        Write-Host "Failed to add group '$GroupName' to access package. Error: $_" -ForegroundColor Red
+    $EntraGroup = $EntraGroup | Where-Object {
+        ($_.ProxyAddresses.Count -eq 0) -or
+        ($_.OnPremisesSyncEnabled -eq $false) -and
+        ($_.GroupTypes -notcontains "DynamicMembership")
+    }
+
+    if ($EntraGroup) {
+        Write-Host "Group found: $($EntraGroup.DisplayName)" -ForegroundColor Green
+        $GroupObjectId = $EntraGroup.Id
+
+        # Check if the group is already a resource in the catalog
+        $CatalogResources = Get-MgEntitlementManagementCatalogResource -AccessPackageCatalogId $CatalogId -All
+        $GroupResource = $CatalogResources | Where-Object { $_.OriginId -eq $GroupObjectId }
+
+        if ($GroupResource) {
+            Write-Host "The group with ID '$GroupObjectId' is already a resource in the catalog." -ForegroundColor Yellow
+        } else {
+            # Add the Group as a resource to the Catalog
+            $GroupResourceAddParameters = @{
+                requestType = "adminAdd"
+                resource = @{
+                    originId = $GroupObjectId
+                    originSystem = "AadGroup"
+                }
+                catalog = @{
+                    id = $CatalogId
+                }
+            }
+
+            try {
+                New-MgEntitlementManagementResourceRequest -BodyParameter $GroupResourceAddParameters | Out-Null
+                Write-Host "Group with ID '$GroupObjectId' added to catalog successfully." -ForegroundColor Green
+            } catch {
+                Write-Host "Failed to add group with ID '$GroupObjectId' to catalog. Error: $_" -ForegroundColor Red
+                return
+            }
+        }
+
+        # Get the Group as a resource from the Catalog
+        $CatalogResources = Get-MgEntitlementManagementCatalogResource -AccessPackageCatalogId $CatalogId -ExpandProperty "scopes" -All
+        $GroupResource = $CatalogResources | Where-Object { $_.OriginId -eq $GroupObjectId }
+        $GroupResourceScope = $GroupResource.Scopes[0]
+
+        # Add the Group as a resource role to the Access Package
+        $GroupResourceFilter = "(originSystem eq 'AadGroup' and resource/id eq '$($GroupResource.Id)')"
+        $GroupResourceRoles = Get-MgEntitlementManagementCatalogResourceRole -AccessPackageCatalogId $CatalogId -Filter $GroupResourceFilter -ExpandProperty "resource"
+        $GroupMemberRole = $GroupResourceRoles | Where-Object { $_.DisplayName -eq "Member" }
+
+        $GroupResourceRoleScopeParameters = @{
+            role = @{
+                displayName = "Member"
+                description = ""
+                originSystem = $GroupMemberRole.OriginSystem
+                originId = $GroupMemberRole.OriginId
+                resource = @{
+                    id = $GroupResource.Id
+                    originId = $GroupResource.OriginId
+                    originSystem = $GroupResource.OriginSystem
+                }
+            }
+            scope = @{
+                id = $GroupResourceScope.Id
+                originId = $GroupResourceScope.OriginId
+                originSystem = $GroupResourceScope.OriginSystem
+            }
+        }
+
+        try {
+            New-MgEntitlementManagementAccessPackageResourceRoleScope -AccessPackageId $AccessPackageId -BodyParameter $GroupResourceRoleScopeParameters | Out-Null
+            Write-Host "Group '$GroupName' added to access package successfully." -ForegroundColor Green
+        } catch {
+            Write-Host "Failed to add group '$GroupName' to access package. Error: $_" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Group '$GroupName' does not meet criteria." -ForegroundColor Yellow
     }
 }
 
@@ -403,7 +371,6 @@ function Invoke-AccessPackages {
         # Add the groups to the access package
         foreach ($EntraGroup in $Package.Value) {
             Write-Host "Adding group '$EntraGroup' to catalog and access package..." -ForegroundColor Magenta
-            Add-EntraGroupToCatalog -CatalogId $Catalog.Id -GroupName $EntraGroup
             Add-EntraGroupToAccessPackage -CatalogId $Catalog.Id -GroupName $EntraGroup -AccessPackageId $GetTheNewAccessPackage.Id
         }
     }
