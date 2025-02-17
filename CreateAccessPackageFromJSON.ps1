@@ -217,19 +217,29 @@ Function Add-EntraGroupToCatalog {
         [string]$GroupName
     )
 
-    # Get the Group from Entra
-    try {
-        $EntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'" | Where-Object {($_.ProxyAddresses.Count -eq 0) -or ($_.OnPremisesSyncEnabled -eq $false) -or $_.GroupTypes -eq "DynamicMembership" }
-        if ($EntraGroup) {
-            Write-Host "Group found: $($EntraGroup.DisplayName)" -ForegroundColor Green
-            $GroupObjectId = $EntraGroup.Id
-        } else {
-            throw "Group '$GroupObjectId' not found."
-        }
-    } catch {
-        Write-Host "Failed to retrieve group '$GroupObjectId'. Error: $_" -ForegroundColor Red
-        return
-    }
+# Get the Group from Entra
+try {
+    $GetEntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'" 
+}
+catch {
+    Write-Host "Error finding group '$GroupName': $_" -ForegroundColor Red
+    return
+}
+
+if ($GetEntraGroup -eq $null) {
+    Write-Host "Group '$GroupName' not found." -ForegroundColor Red
+    return
+}
+
+$EntraGroup = $GetEntraGroup | Where-Object {
+    ($_.ProxyAddresses.Count -eq 0) -or
+    ($_.OnPremisesSyncEnabled -eq $false) -and
+    ($_.GroupTypes -notcontains "DynamicMembership")
+}
+
+if ($EntraGroup) {
+    Write-Host "Group found: $($EntraGroup.DisplayName)" -ForegroundColor Green
+    $GroupObjectId = $EntraGroup.Id
 
     # Check if the group is already a resource in the catalog
     $GroupResourceId = $null
@@ -257,12 +267,16 @@ Function Add-EntraGroupToCatalog {
         }
       
         try {
-            New-MgEntitlementManagementResourceRequest -BodyParameter $GroupResourceAddParameters | out-null
+            #New-MgEntitlementManagementResourceRequest -BodyParameter $GroupResourceAddParameters | out-null
             Write-Host "Group with ID '$GroupObjectId' added to catalog successfully." -ForegroundColor Green
         } catch {
             Write-Host "Failed to add group with ID '$GroupObjectId' to catalog. Error: $_" -ForegroundColor Red
         }
     }
+} else {
+    Write-Host "Group '$GroupName' does not meet criteria." -ForegroundColor Yellow
+}
+
 }
 
 # Function to add a group to an access package
