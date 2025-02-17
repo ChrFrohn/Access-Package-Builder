@@ -267,7 +267,7 @@ if ($EntraGroup) {
         }
       
         try {
-            #New-MgEntitlementManagementResourceRequest -BodyParameter $GroupResourceAddParameters | out-null
+            New-MgEntitlementManagementResourceRequest -BodyParameter $GroupResourceAddParameters | out-null
             Write-Host "Group with ID '$GroupObjectId' added to catalog successfully." -ForegroundColor Green
         } catch {
             Write-Host "Failed to add group with ID '$GroupObjectId' to catalog. Error: $_" -ForegroundColor Red
