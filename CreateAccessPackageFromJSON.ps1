@@ -76,7 +76,6 @@
 
 #>
 
-
 # Load JSON file from user input
 $JsonFilePath = Read-Host "Enter the path to the JSON file"
 if (-Not (Test-Path -Path $JsonFilePath)) {
@@ -93,7 +92,6 @@ if ([string]::IsNullOrWhiteSpace($TenantId)) {
     Write-Host "Tenant ID cannot be empty" -ForegroundColor Red
     exit
 }
-
 
 # Function to create a catalog
 function New-Catalog {
@@ -211,6 +209,7 @@ function New-AccessPackageAutoAssignmentPolicy {
         Write-Host "Failed to create access package assignment policy '$PolicyName'. Error: $_" -ForegroundColor Red
     }
 }
+
 # Function to add Entra Group to Catalog
 Function Add-EntraGroupToCatalog {
     param (
@@ -220,7 +219,7 @@ Function Add-EntraGroupToCatalog {
 
     # Get the Group from Entra
     try {
-        $EntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'" | Where-Object {($_.ProxyAddresses.Count -eq 0) -or ($_.OnPremisesSyncEnabled -eq $false)}
+        $EntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'" | Where-Object {($_.ProxyAddresses.Count -eq 0) -or ($_.OnPremisesSyncEnabled -eq $false) -or $_.GroupTypes -eq "DynamicMembership" }
         if ($EntraGroup) {
             Write-Host "Group found: $($EntraGroup.DisplayName)" -ForegroundColor Green
             $GroupObjectId = $EntraGroup.Id
@@ -397,6 +396,7 @@ function Invoke-AccessPackages {
     Write-Host "Finished processing $PackageType access packages." -ForegroundColor Green
 }
 
+# Function to display access packages
 function Show-AccessPackages {
     param (
         [string]$PackageType,
