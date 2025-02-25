@@ -1,27 +1,40 @@
-# PowerShell Script for Access Package Builder - Creating Access Packages Automatically
+# Access Package Builder: Automating Access Package Creation with PowerShell
 
-First of a big shout out to Nico Wyss for creating the Access Package Builder tool and for inviting me to contribute to this tool!
+First of all, a big shout out to Nico Wyss for creating the Access Package Builder tool and for inviting me to contribute to this project!
 
 ## Introduction
 
-By leveraging the Access Package Builder tool - https://accesspackagebuilder.azurewebsites.net/builder - you can get recommendations on what access packages could be beneficial to create for your organization. As you may or may not know, access packages in Entra ID Governance provide a great way of bundling resources together, making it easier to assign access to users in your organization. For example, your Human Resources department might have three security groups that provide access to three different applications, each with different permission levels. Instead of manually assigning those three groups to one or more users, you can create an Access Package in Entra ID Governance and add those three security groups to it. You might call this Access Package "Department - HR." This task can be completed very quickly.
+Managing access rights in large organizations can be a complex and time-consuming task. If you've worked with Microsoft Entra ID Governance, you probably know about Access Packages - a great way to bundle resources together for easier assignment. But here's the challenge: how do you decide which resources should go into which packages when you have thousands of security groups and hundreds of departments?
 
-However, if you have thousands of groups and hundreds of departments or roles in your company, it can be difficult to determine which groups should be part of which access package. This is where the Access Package Builder comes into play. By leveraging the Access Package Builder, you can get an overview and recommendations on what access packages you should create, and which security groups should be part of each access package. With this visual diagram/map, you are able to quickly determine what access packages you should have.
+This is where the [Access Package Builder](https://accesspackagebuilder.azurewebsites.net/builder) comes in. It analyzes your existing setup and gives you recommendations on what access packages would be beneficial to create, along with which security groups should be added to each package.
 
-![image](https://github.com/user-attachments/assets/35945dcf-6518-48db-a71b-cf24ceed6600)
+![Access Package Builder visualization](https://github.com/user-attachments/assets/35945dcf-6518-48db-a71b-cf24ceed6600)
 
+## A Real-World Example
 
-Now that you have an overview and list of access packages and corresponding groups that should be added to each access package, you have two options. You can create them manually yourself, or you can use this PowerShell script to create the access packages with groups automatically. The Access Package Builder can provide you with a JSON file that needs to be used with the PowerShell script.
+Let's say your HR department uses three different applications, each requiring different permission levels through security groups. Instead of manually assigning those three groups to every HR employee, you can create an "HR Department" Access Package that bundles them together. When someone joins HR, they get all the necessary access in one assignment.
 
-## The PowerShell script
+Now scale that up to an enterprise with dozens of departments and roles. How do you determine the right packages? The Access Package Builder creates a visual diagram/map that helps you quickly identify what packages make sense for your organization.
 
-Please note you will be asked to proceed with creating the access package after you have typed in your information. You will also get a quick overview of what access packages, and which groups will be added to them before the script performs any write operations in your tenant.
+## Automating Package Creation
 
-### The JSON file
+Once you have your recommendations, you have two options:
+1. Create each package manually (potentially very time-consuming)
+2. Use my PowerShell script to automate the entire process
 
-The PowerShell script will ask for the JSON file to begin with. The JSON file needs to be downloaded from here: https://accesspackagebuilder.azurewebsites.net/builder. Then, you can write or paste the path to the JSON file like this: "C:\Users\Frohn\Downloads\access-packages.json." If nothing is inputted, the script will exit.
+The script takes the JSON output from the Access Package Builder and automatically creates all the recommended packages in your tenant. What might take days of manual configuration can be done in minutes!
 
-The JSON file looks something like this:
+## Using the PowerShell Script - Step by Step
+
+### What You'll Need:
+- The JSON file from the Access Package Builder containing the recommendations
+- Your Tenant ID (found in the Microsoft Entra admin center)
+- Basic familiarity with running PowerShell scripts
+
+### The Process:
+
+#### 1. Get Your JSON File
+First, visit the [Access Package Builder](https://accesspackagebuilder.azurewebsites.net/builder) and download your recommendations as a JSON file. It will look something like this:
 
 ```json
 {
@@ -38,21 +51,33 @@ The JSON file looks something like this:
 }
 ```
 
-### Tenant ID
+#### 2. Run the Script
+The script will first ask for the path to your JSON file (e.g., "C:\Users\YourName\Downloads\access-packages.json"). If you don't provide this, the script will exit.
 
-The next input the PowerShell script needs is your Tenant ID. This is required in order to connect to the tenant where the access packages will be created. Your tenant ID is unique for each tenant and can be found here: https://entra.microsoft.com/#view/Microsoft_AAD_IAM/TenantOverview.ReactView. It should look something like this: 4b0c7e06-9a48-4c32-dab9-44054bd2ba22.
+Next, it will ask for your Tenant ID. This is required to connect to the right tenant where the access packages will be created. Your Tenant ID can be found at https://entra.microsoft.com/#view/Microsoft_AAD_IAM/TenantOverview.ReactView and looks something like: 4b0c7e06-9a48-4c32-dab9-44054bd2ba22.
 
-The PowerShell script will check if you input something that matches a tenant ID, and if not, it will exit.
+#### 3. Review and Confirm
+Before making any changes, the script will show you what it's going to create:
+- Which access packages will be created
+- Which security groups will be added to each package
 
-### Catalogs in Entra ID Governance
+You'll be asked to confirm with 'Y' (Yes, continue) or 'N' (No, stop) before any changes are made.
 
-Each access package needs to be created in a Catalog in Entra ID Governance. This is where the access package along with resources (groups) will be stored and managed. The PowerShell script will create the following three catalogs in Entra ID Governance if they don't already exist (if they do exist, they will be used to add the access packages). The catalogs need to be created before the access packages can be created:
+#### 4. Automatic Creation
+After confirmation, the script will:
+- Create three catalogs if they don't already exist:
+  - Default
+  - Company
+  - Department
+- Create the recommended access packages in these catalogs
+- Set up default policies (which control how packages can be assigned)
+- Set up auto-assignment policies (which can automatically assign packages based on user attributes)
+- Add all compatible security groups to each package
 
-- Catalog 1: Default
-- Catalog 2: Company
-- Catalog 3: Department
+## Technical Details
 
-Here's how the script creates catalogs:
+### Catalog Creation
+Each access package needs to be created within a Catalog. The script creates or uses three catalogs:
 
 ```powershell
 function New-Catalog {
@@ -92,14 +117,10 @@ function Get-OrCreateCatalog {
     }
     return $Catalog
 }
-
 ```
 
-### Creating the access package
-
-Once the catalogs are created or acquired, the script will proceed to create the access packages based on the information from the JSON file. The access packages will be created in their respective catalogs and nothing more. There won't be any groups or policies added to the access packages yet.
-
-The creation of the access packages in the PowerShell script is handled by the function named "New-AccessPackage."
+### Access Package Creation
+The script creates access packages based on the JSON file:
 
 ```powershell
 function New-AccessPackage {
@@ -127,13 +148,8 @@ function New-AccessPackage {
 }
 ```
 
-### The Access package policy (default)
-
-When you create an access package, you need to have a policy for that access package. The policy is responsible for handling who can request the access package, how long they should have access, and who approves the access package assignment.
-
-The PowerShell script will add a default policy to each access package with various properties.
-
-PLEASE NOTE THE ACCESS PACKAGE POLICY IS DISABLED WHEN CREATED.
+### Default Policy Creation
+Each access package needs a policy to control who can request it and how. Note that these policies are disabled by default:
 
 ```powershell
 function New-AccessPackagePolicy {
@@ -180,11 +196,8 @@ function New-AccessPackagePolicy {
 }
 ```
 
-### Auto assignment access package Policy
-
-Besides the creation of the default access package policy, an auto-assignment access package policy will also be created for each access package. A policy like this will automatically assign users that fit the criteria of the policy, such as all users with "HR" in their department and located in the city "Copenhagen."
-
-The function named "New-AccessPackageAutoAssignmentPolicy" will create an auto-assignment policy for each access package.
+### Auto-Assignment Policy Creation
+The script also creates auto-assignment policies that can automatically assign packages based on user attributes:
 
 ```powershell
 function New-AccessPackageAutoAssignmentPolicy {
@@ -220,17 +233,15 @@ function New-AccessPackageAutoAssignmentPolicy {
 }
 ```
 
-### Adding the groups to the access packages
+### Adding Groups to Packages
+The script performs compatibility checks before adding groups to packages. Not all group types can be used with access packages:
 
-When the access packages have been created in their respective catalogs and the policies have been created and added to them, the PowerShell script will then proceed to add the groups to the access packages. Before a group can be added to an access package, the group first needs to be added to the catalog as a resource. Once that has been done, the group can then be added to the access package. The function that handles this task will also perform a check on the group, as not all group types can be used with access packages.
-
-The following group types cannot be added to an access package:
-
-- Exchange groups of any kind (Distribution list, mail-enabled security group, dynamic distribution list)
+- Exchange groups (Distribution lists, mail-enabled security groups, dynamic distribution lists)
 - On-premises Active Directory groups
 - Entra ID dynamic groups
 
-The script will perform a "test" on each group to check if it can be added to the access package. If not, the script will skip that group and continue to the next group. The PowerShell script will output the reason in the terminal as to why the group couldn't be added.
+The script automatically identifies and skips incompatible groups:
+
 ```powershell
 Function Add-EntraGroupToAccessPackage {
     param (
@@ -330,30 +341,11 @@ Function Add-EntraGroupToAccessPackage {
         Write-Host "Group '$GroupName' does not meet criteria." -ForegroundColor Yellow
     }
 }
-
 ```
 
-### Display the access package
+## Putting It All Together
 
-As mentioned in the beginning, the PowerShell script will output what access packages will be created and what groups will be added to each access package. This is done by the function "Show-AccessPackages." This is meant to provide you with an insight into what is about to happen.
-
-```powershell
-function Show-AccessPackages {
-    param (
-        [string]$PackageType,
-        [object]$Packages
-    )
-
-    foreach ($Package in $Packages.PSObject.Properties) {
-        Write-Host "$PackageType access package: $($Package.Name)" -ForegroundColor Cyan
-        Write-Host "Groups: $($Package.Value | Out-String)" -ForegroundColor Yellow
-    }
-}
-```
-
-## Putting it all together
-
-All the functionality you have just read about comes together in the final function named "Invoke-AccessPackages." Inside this function, all the other functions are processed with their respective parameters.
+All of these functions come together in the main `Invoke-AccessPackages` function:
 
 ```powershell
 function Invoke-AccessPackages {
@@ -403,39 +395,19 @@ function Invoke-AccessPackages {
 }
 ```
 
-The sample for creating all the access packages in the "default" catalog is this:
+## Permissions Required
 
-```powershell
-Invoke-AccessPackages -PackageType "Default" -Packages $JSON.defaultAccessPackage -CatalogDescription "Default catalog"
-```
+The script requires two Microsoft Graph permissions:
+- `EntitlementManagement.ReadWrite.All` (to create catalogs, packages, and policies)
+- `Group.Read.All` (to read group properties and determine compatibility)
 
-For "Company," it is this:
+## The Result
 
-```powershell
-Invoke-AccessPackages -PackageType "Company" -Packages $JSON.companyAccessPackages -CatalogDescription "Company catalog"
-```
+After running the script, you'll have a well-organized set of access packages that align with your organizational structure. What might have taken days of manual configuration can be done in minutes!
 
-For "Department," it is this:
+I hope you find this PowerShell script useful for automating the creation of access packages recommended by the Access Package Builder. If you have any questions or feedback, please feel free to reach out.
 
-```powershell
-Invoke-AccessPackages -PackageType "Department" -Packages $JSON.departmentAccessPackages -CatalogDescription "Department catalog"
-```
+## Script Repository
 
-Before these three commands are executed, the PowerShell script will need to connect to the Microsoft Graph with the permissions "EntitlementManagement.ReadWrite.All" and "Group.Read.All."
-
-"EntitlementManagement.ReadWrite.All" is needed to create all the access packages, policies, and catalogs.
-
-"Group.Read.All" is needed to read the properties of the groups to determine if they can be added to the catalogs and access packages.
-
-After a successful connection, you will be asked to confirm if you want to proceed with the creation of the access packages. Press "Y" or "N."
-
-- Y = Yes, continue
-- N = No, stop
-
-Once confirmed, the PowerShell script will execute and create the access packages one by one. You will get outputs along the way to provide insights into what is happening.
-
-I hope you find this PowerShell script useful for automating the creation of access packages recommended by the Access Package Builder!
-# Scripts
-
+You can find the full script here:
 - [CreateAccessPackageFromJSON.ps1](https://github.com/ChrFrohn/Access-Package-Builder/blob/main/CreateAccessPackageFromJSON.ps1)
-
