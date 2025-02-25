@@ -70,6 +70,31 @@ function New-Catalog {
 }
 ```
 
+```powershell
+function Get-OrCreateCatalog {
+    param (
+        [string]$CatalogDisplayName,
+        [string]$CatalogDescription
+    )
+
+    $Catalogs = Get-MgEntitlementManagementCatalog -All
+    $Catalog = $Catalogs | Where-Object DisplayName -eq $CatalogDisplayName
+    if ($Catalog) {
+        Write-Host "Catalog '$CatalogDisplayName' already exists." -ForegroundColor Yellow
+    } else {
+        try {
+            New-Catalog -CatalogDisplayName $CatalogDisplayName -CatalogDescription $CatalogDescription
+            $Catalog = Get-MgEntitlementManagementCatalog -Filter "displayName eq '$CatalogDisplayName'"
+        } catch {
+            Write-Host "Failed to create catalog '$CatalogDisplayName'. Error: $_" -ForegroundColor Red
+            return $null
+        }
+    }
+    return $Catalog
+}
+
+```
+
 ### Creating the access package
 
 Once the catalogs are created or acquired, the script will proceed to create the access packages based on the information from the JSON file. The access packages will be created in their respective catalogs and nothing more. There won't be any groups or policies added to the access packages yet.
@@ -161,6 +186,40 @@ Besides the creation of the default access package policy, an auto-assignment ac
 
 The function named "New-AccessPackageAutoAssignmentPolicy" will create an auto-assignment policy for each access package.
 
+```powershell
+function New-AccessPackageAutoAssignmentPolicy {
+    param (
+        [string]$PolicyName,
+        [string]$PolicyDescription,
+        [string]$AccessPackageId,
+        [string]$AutoAssignmentPolicyFilter
+    )
+
+    $AutoPolicyParameters = @{
+        displayName = $PolicyName
+        description = $PolicyDescription
+        allowedTargetScope = "specificDirectoryUsers"
+        specificAllowedTargets = @(
+            @{
+                "@odata.type" = "#microsoft.graph.attributeRuleMembers"
+                description = $PolicyDescription
+                membershipRule = $AutoAssignmentPolicyFilter
+            }
+        )
+        accessPackage = @{
+            id = $AccessPackageId
+        }
+    }
+
+    try {
+        New-MgEntitlementManagementAssignmentPolicy -BodyParameter $AutoPolicyParameters | out-null
+        Write-Host "Access package assignment policy: '$PolicyName' created successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Failed to create access package assignment policy '$PolicyName'. Error: $_" -ForegroundColor Red
+    }
+}
+```
+
 ### Adding the groups to the access packages
 
 When the access packages have been created in their respective catalogs and the policies have been created and added to them, the PowerShell script will then proceed to add the groups to the access packages. Before a group can be added to an access package, the group first needs to be added to the catalog as a resource. Once that has been done, the group can then be added to the access package. The function that handles this task will also perform a check on the group, as not all group types can be used with access packages.
@@ -172,6 +231,107 @@ The following group types cannot be added to an access package:
 - Entra ID dynamic groups
 
 The script will perform a "test" on each group to check if it can be added to the access package. If not, the script will skip that group and continue to the next group. The PowerShell script will output the reason in the terminal as to why the group couldn't be added.
+```powershell
+Function Add-EntraGroupToAccessPackage {
+    param (
+        [string]$CatalogId,
+        [string]$GroupName,
+        [string]$AccessPackageId
+    )
+
+    # Get the Group from Entra
+    try {
+        $EntraGroup = Get-MgGroup -Filter "DisplayName eq '$GroupName'"
+    }
+    catch {
+        Write-Host "Error finding group '$GroupName': $_" -ForegroundColor Red
+        return
+    }
+
+    if ($EntraGroup -eq $null) {
+        Write-Host "Group '$GroupName' not found." -ForegroundColor Red
+        return
+    }
+
+    $EntraGroup = $EntraGroup | Where-Object {
+        ($_.ProxyAddresses.Count -eq 0) -or
+        ($_.OnPremisesSyncEnabled -eq $false) -and
+        ($_.GroupTypes -notcontains "DynamicMembership")
+    }
+
+    if ($EntraGroup) {
+        Write-Host "Group found: $($EntraGroup.DisplayName)" -ForegroundColor Green
+        $GroupObjectId = $EntraGroup.Id
+
+        # Check if the group is already a resource in the catalog
+        $CatalogResources = Get-MgEntitlementManagementCatalogResource -AccessPackageCatalogId $CatalogId -All
+        $GroupResource = $CatalogResources | Where-Object { $_.OriginId -eq $GroupObjectId }
+
+        if ($GroupResource) {
+            Write-Host "The group with ID '$GroupObjectId' is already a resource in the catalog." -ForegroundColor Yellow
+        } else {
+            # Add the Group as a resource to the Catalog
+            $GroupResourceAddParameters = @{
+                requestType = "adminAdd"
+                resource = @{
+                    originId = $GroupObjectId
+                    originSystem = "AadGroup"
+                }
+                catalog = @{
+                    id = $CatalogId
+                }
+            }
+
+            try {
+                New-MgEntitlementManagementResourceRequest -BodyParameter $GroupResourceAddParameters | Out-Null
+                Write-Host "Group with ID '$GroupObjectId' added to catalog successfully." -ForegroundColor Green
+            } catch {
+                Write-Host "Failed to add group with ID '$GroupObjectId' to catalog. Error: $_" -ForegroundColor Red
+                return
+            }
+        }
+
+        # Get the Group as a resource from the Catalog
+        $CatalogResources = Get-MgEntitlementManagementCatalogResource -AccessPackageCatalogId $CatalogId -ExpandProperty "scopes" -All
+        $GroupResource = $CatalogResources | Where-Object { $_.OriginId -eq $GroupObjectId }
+        $GroupResourceScope = $GroupResource.Scopes[0]
+
+        # Add the Group as a resource role to the Access Package
+        $GroupResourceFilter = "(originSystem eq 'AadGroup' and resource/id eq '$($GroupResource.Id)')"
+        $GroupResourceRoles = Get-MgEntitlementManagementCatalogResourceRole -AccessPackageCatalogId $CatalogId -Filter $GroupResourceFilter -ExpandProperty "resource"
+        $GroupMemberRole = $GroupResourceRoles | Where-Object { $_.DisplayName -eq "Member" }
+
+        $GroupResourceRoleScopeParameters = @{
+            role = @{
+                displayName = "Member"
+                description = ""
+                originSystem = $GroupMemberRole.OriginSystem
+                originId = $GroupMemberRole.OriginId
+                resource = @{
+                    id = $GroupResource.Id
+                    originId = $GroupResource.OriginId
+                    originSystem = $GroupResource.OriginSystem
+                }
+            }
+            scope = @{
+                id = $GroupResourceScope.Id
+                originId = $GroupResourceScope.OriginId
+                originSystem = $GroupResourceScope.OriginSystem
+            }
+        }
+
+        try {
+            New-MgEntitlementManagementAccessPackageResourceRoleScope -AccessPackageId $AccessPackageId -BodyParameter $GroupResourceRoleScopeParameters | Out-Null
+            Write-Host "Group '$GroupName' added to access package successfully." -ForegroundColor Green
+        } catch {
+            Write-Host "Failed to add group '$GroupName' to access package. Error: $_" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Group '$GroupName' does not meet criteria." -ForegroundColor Yellow
+    }
+}
+
+```
 
 ### Display the access package
 
@@ -194,6 +354,54 @@ function Show-AccessPackages {
 ## Putting it all together
 
 All the functionality you have just read about comes together in the final function named "Invoke-AccessPackages." Inside this function, all the other functions are processed with their respective parameters.
+
+```powershell
+function Invoke-AccessPackages {
+    param (
+        [string]$PackageType,
+        [object]$Packages,
+        [string]$CatalogDescription
+    )
+
+    Write-Host "Processing $PackageType access packages..." -ForegroundColor Magenta
+    $Catalog = Get-OrCreateCatalog -CatalogDisplayName $PackageType -CatalogDescription $CatalogDescription
+    if ($null -eq $Catalog) {
+        return
+    }
+
+    foreach ($Package in $Packages.PSObject.Properties) {
+        Write-Host "Processing access package: $($Package.Name)" -ForegroundColor Magenta
+        # Check if the access package already exists
+        $ExistingAccessPackage = Get-MgEntitlementManagementAccessPackage -Filter "displayName eq '$($Package.Name)'"
+        if ($ExistingAccessPackage) {
+            Write-Host "Access package '$($Package.Name)' already exists." -ForegroundColor Yellow
+            $GetTheNewAccessPackage = $ExistingAccessPackage
+        } else {
+            try {
+                New-AccessPackage -DisplayName $Package.Name -Description "$PackageType access package: $($Package.Name)" -CatalogId $Catalog.id
+                $GetTheNewAccessPackage = Get-MgEntitlementManagementAccessPackage -Filter "displayName eq '$($Package.Name)'"
+
+                # Create the "Initial Policy" for the access package
+                New-AccessPackagePolicy -AccessPackageId $GetTheNewAccessPackage.Id
+
+                # Create access package auto assignment policy for the access package
+                $AutoAssignmentPolicyFilter = "(user.$PackageType -eq `"$($Package.Name)`")"
+                New-AccessPackageAutoAssignmentPolicy -PolicyName "Policy for $($Package.Name)" -PolicyDescription "Policy for $($Package.Name)" -AccessPackageId $GetTheNewAccessPackage.Id -AutoAssignmentPolicyFilter $AutoAssignmentPolicyFilter
+            } catch {
+                Write-Host "Failed to create access package '$($Package.Name)'. Error: $_" -ForegroundColor Red
+                continue
+            }
+        }
+
+        # Add the groups to the access package
+        foreach ($EntraGroup in $Package.Value) {
+            Write-Host "Adding group '$EntraGroup' to catalog and access package..." -ForegroundColor Magenta
+            Add-EntraGroupToAccessPackage -CatalogId $Catalog.Id -GroupName $EntraGroup -AccessPackageId $GetTheNewAccessPackage.Id
+        }
+    }
+    Write-Host "Finished processing $PackageType access packages." -ForegroundColor Green
+}
+```
 
 The sample for creating all the access packages in the "default" catalog is this:
 
