@@ -1,4 +1,4 @@
-# Simplifying Access Management with the Access Package Builder Tool
+# PowerShell Script for Access Package Builder - Creating Access Packages Automatically
 
 First, a big shout out to Nico Wyss for creating the Access Package Builder tool and inviting me to contribute to this project!
 
