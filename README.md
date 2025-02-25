@@ -40,7 +40,7 @@ The JSON file looks something like this:
 
 ### Tenant ID
 
-The next input the PowerShell script needs is your Tenant ID. This is required in order to connect to the tenant where the access packages will be created. Your tenant ID is unique for each tenant and can be found here: https://entra.microsoft.com/#view/Microsoft_AAD_IAM/TenantOverview.ReactView. It should look something like this: 7a0d6d06-8a78-4a32-aac9-23050ad2ba20.
+The next input the PowerShell script needs is your Tenant ID. This is required in order to connect to the tenant where the access packages will be created. Your tenant ID is unique for each tenant and can be found here: https://entra.microsoft.com/#view/Microsoft_AAD_IAM/TenantOverview.ReactView. It should look something like this: 4b0c7e06-9a48-4c32-dab9-44054bd2ba22.
 
 The PowerShell script will check if you input something that matches a tenant ID, and if not, it will exit.
 
