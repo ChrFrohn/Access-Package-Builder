@@ -1,6 +1,6 @@
 # Access Package Builder: Automating Access Package Creation with PowerShell
 
-First of all, a big shout out to (Nico Wyss)[https://www.linkedin.com/in/nico-wyss/] for creating the (Access Package Builder tool)[https://accesspackagebuilder.azurewebsites.net/] and for inviting me to contribute to this project!
+First of all, a big shout out to [Nico Wyss](https://www.linkedin.com/in/nico-wyss/) for creating the [Access Package Builder tool](https://accesspackagebuilder.azurewebsites.net/) and for inviting me to contribute to this project!
 
 ## Introduction
 
